@@ -1,7 +1,7 @@
 const app = document.getElementById("app");
 
-const GUESTS_KEY = "black_gold_rsvp_guests_v2";
-const EVENT_KEY = "black_gold_rsvp_event_v2";
+const GUESTS_KEY = "black_gold_rsvp_guests_v3";
+const EVENT_KEY = "black_gold_rsvp_event_v3";
 
 let guests = JSON.parse(localStorage.getItem(GUESTS_KEY)) || [];
 
@@ -25,7 +25,6 @@ function saveEvent() {
 
 function createId() {
   if (crypto.randomUUID) return crypto.randomUUID();
-
   return "guest-" + Date.now() + "-" + Math.random().toString(16).slice(2);
 }
 
@@ -43,7 +42,7 @@ function onlyNumbers(value) {
 }
 
 function normalizePhone(phone) {
-  let clean = onlyNumbers(phone);
+  const clean = onlyNumbers(phone);
 
   if (clean.length === 11) return "55" + clean;
   if (clean.length === 10) return "55" + clean;
@@ -95,8 +94,41 @@ function getBaseUrl() {
   return `${location.origin}${location.pathname}`;
 }
 
+function encodeInviteData(guest) {
+  const data = {
+    guestId: guest.id,
+    name: guest.name,
+    phone: guest.phone,
+    couple: eventData.couple,
+    date: eventData.date,
+    time: eventData.time,
+    place: eventData.place,
+    address: eventData.address,
+    messageIntro: eventData.messageIntro,
+    cover: eventData.cover || ""
+  };
+
+  return btoa(unescape(encodeURIComponent(JSON.stringify(data))));
+}
+
+function decodeInviteData(payload) {
+  try {
+    return JSON.parse(decodeURIComponent(escape(atob(payload))));
+  } catch (error) {
+    return null;
+  }
+}
+
 function getConfirmLink(guestId) {
-  return `${getBaseUrl()}#confirmar/${guestId}`;
+  const guest = guests.find(g => g.id === guestId);
+
+  if (!guest) {
+    return getBaseUrl();
+  }
+
+  const payload = encodeInviteData(guest);
+
+  return `${getBaseUrl()}#convite/${payload}`;
 }
 
 function getWhatsAppMessage(guest) {
@@ -130,6 +162,7 @@ function syncEventFromForm() {
   eventData.place = document.getElementById("eventPlace")?.value || "";
   eventData.address = document.getElementById("eventAddress")?.value || "";
   eventData.messageIntro = document.getElementById("messageIntro")?.value || "";
+
   saveEvent();
 }
 
@@ -211,8 +244,8 @@ function renderDashboard() {
           </div>
 
           <p class="small">
-            Para o WhatsApp funcionar fora do seu computador, hospede o sistema online.
-            Link com 127.0.0.1 funciona apenas localmente.
+            Versão demonstrativa: o convidado consegue abrir o link em qualquer celular.
+            Para a resposta voltar ao painel em tempo real, será necessário banco de dados.
           </p>
         </aside>
 
@@ -258,39 +291,43 @@ function renderDashboard() {
               </thead>
 
               <tbody>
-                ${guests.length ? guests.map((guest, index) => `
-                  <tr>
-                    <td>${index + 1}</td>
-                    <td class="guest-name">${escapeHTML(guest.name)}</td>
-                    <td>${escapeHTML(guest.phone)}</td>
-                    <td>${statusBadge(guest.status)}</td>
-                    <td>${guest.companions || 0}</td>
-                    <td>${escapeHTML(guest.note || "-")}</td>
-                    <td>
-                      <div class="actions">
-                        <a class="btn" href="${getWhatsappLink(guest)}" target="_blank">
-                          WhatsApp
-                        </a>
+                ${
+                  guests.length
+                    ? guests.map((guest, index) => `
+                      <tr>
+                        <td>${index + 1}</td>
+                        <td class="guest-name">${escapeHTML(guest.name)}</td>
+                        <td>${escapeHTML(guest.phone)}</td>
+                        <td>${statusBadge(guest.status)}</td>
+                        <td>${guest.companions || 0}</td>
+                        <td>${escapeHTML(guest.note || "-")}</td>
+                        <td>
+                          <div class="actions">
+                            <a class="btn" href="${getWhatsappLink(guest)}" target="_blank">
+                              WhatsApp
+                            </a>
 
-                        <button class="btn secondary" onclick="copyLink('${guest.id}')">
-                          Copiar link
-                        </button>
+                            <button class="btn secondary" onclick="copyLink('${guest.id}')">
+                              Copiar link
+                            </button>
 
-                        <button class="btn secondary" onclick="openConfirmPreview('${guest.id}')">
-                          Ver tela
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                `).join("") : `
-                  <tr>
-                    <td colspan="7">
-                      <div class="empty">
-                        Nenhum convidado adicionado ainda.
-                      </div>
-                    </td>
-                  </tr>
-                `}
+                            <button class="btn secondary" onclick="openConfirmPreview('${guest.id}')">
+                              Ver tela
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    `).join("")
+                    : `
+                      <tr>
+                        <td colspan="7">
+                          <div class="empty">
+                            Nenhum convidado adicionado ainda.
+                          </div>
+                        </td>
+                      </tr>
+                    `
+                }
               </tbody>
             </table>
           </div>
@@ -364,12 +401,27 @@ function clearAll() {
 }
 
 function copyLink(id) {
-  navigator.clipboard.writeText(getConfirmLink(id));
-  alert("Link de confirmação copiado.");
+  const link = getConfirmLink(id);
+
+  navigator.clipboard.writeText(link)
+    .then(() => {
+      alert("Link de confirmação copiado.");
+    })
+    .catch(() => {
+      prompt("Copie o link abaixo:", link);
+    });
 }
 
 function openConfirmPreview(id) {
-  location.hash = `confirmar/${id}`;
+  const guest = guests.find(g => g.id === id);
+
+  if (!guest) {
+    alert("Convidado não encontrado.");
+    return;
+  }
+
+  const payload = encodeInviteData(guest);
+  location.hash = `convite/${payload}`;
 }
 
 async function handleExcel(event) {
@@ -383,6 +435,11 @@ async function handleExcel(event) {
 
   const text = rows.map(row => row.join(" ")).join("\n");
   const parsed = parseGuestsFromText(text);
+
+  if (!parsed.length) {
+    alert("Não encontrei convidados válidos nesse arquivo.");
+    return;
+  }
 
   guests = [...guests, ...parsed];
   saveGuests();
@@ -406,29 +463,34 @@ async function handlePdf(event) {
 
   const parsed = parseGuestsFromText(text);
 
+  if (!parsed.length) {
+    alert("Não encontrei convidados válidos nesse PDF.");
+    return;
+  }
+
   guests = [...guests, ...parsed];
   saveGuests();
   renderDashboard();
 }
 
-function getCoverStyle() {
-  if (eventData.cover) {
-    return `url('${eventData.cover}')`;
+function getInviteCover(invite) {
+  if (invite.cover) {
+    return `url('${invite.cover}')`;
   }
 
-  return `linear-gradient(135deg, rgba(212,175,55,0.22), rgba(0,0,0,0.75)), url('https://images.unsplash.com/photo-1519741497674-611481863552?auto=format&fit=crop&w=1400&q=80')`;
+  return `
+    linear-gradient(135deg, rgba(212,175,55,0.22), rgba(0,0,0,0.78)),
+    url('https://images.unsplash.com/photo-1519741497674-611481863552?auto=format&fit=crop&w=1400&q=80')
+  `;
 }
 
-function renderConfirmPage(guestId) {
-  const guest = guests.find(item => item.id === guestId);
-
-  if (!guest) {
+function renderPublicInvitePage(invite) {
+  if (!invite) {
     app.innerHTML = `
-      <section class="confirm-page">
+      <section class="confirm-page public-only">
         <div class="card final-message">
-          <h1>Link inválido</h1>
-          <p>Não encontramos esse convidado na lista.</p>
-          <button class="btn" onclick="location.hash=''">Voltar</button>
+          <h1>Convite inválido</h1>
+          <p>Não foi possível carregar os dados deste convite.</p>
         </div>
       </section>
     `;
@@ -436,68 +498,68 @@ function renderConfirmPage(guestId) {
   }
 
   app.innerHTML = `
-    <section class="confirm-page">
+    <section class="confirm-page public-only">
       <div class="card confirm-card">
-        <div class="confirm-cover" style="--cover: ${getCoverStyle()}">
+        <div class="confirm-cover" style="--cover: ${getInviteCover(invite)}">
           <div class="confirm-cover-content">
-            <div class="brand">Confirmação de Presença</div>
-            <h1>${escapeHTML(eventData.couple)}</h1>
+            <div class="brand">Convite especial</div>
+            <h1>${escapeHTML(invite.couple)}</h1>
           </div>
         </div>
 
         <div class="confirm-body">
           <div class="guest-pill">
-            Convidado: ${escapeHTML(guest.name)}
+            ${escapeHTML(invite.name)}
           </div>
 
-          <p>
-            ${escapeHTML(eventData.messageIntro)}
+          <p class="invite-text">
+            ${escapeHTML(invite.messageIntro)}
           </p>
 
           <div class="event-info">
             <div class="info-box">
               <span>Data</span>
-              <strong>${escapeHTML(eventData.date)}</strong>
+              <strong>${escapeHTML(invite.date)}</strong>
             </div>
 
             <div class="info-box">
               <span>Horário</span>
-              <strong>${escapeHTML(eventData.time)}</strong>
+              <strong>${escapeHTML(invite.time)}</strong>
             </div>
 
             <div class="info-box">
               <span>Local</span>
-              <strong>${escapeHTML(eventData.place)}</strong>
+              <strong>${escapeHTML(invite.place)}</strong>
             </div>
           </div>
 
           <div class="info-box">
             <span>Endereço</span>
-            <strong>${escapeHTML(eventData.address)}</strong>
+            <strong>${escapeHTML(invite.address)}</strong>
           </div>
 
           <div class="form-group" style="margin-top:22px;">
-            <label>Número de acompanhantes</label>
-            <input id="companions" type="number" min="0" value="${guest.companions || 0}" />
+            <label>Acompanhantes</label>
+            <input id="publicCompanions" type="number" min="0" value="0" />
           </div>
 
           <div class="form-group">
             <label>Observação</label>
-            <textarea id="note" placeholder="Ex: restrição alimentar, criança, observações...">${escapeHTML(guest.note || "")}</textarea>
+            <textarea id="publicNote" placeholder="Ex: restrição alimentar, criança, observação especial..."></textarea>
           </div>
 
-          <div class="actions">
-            <button class="btn success" onclick="confirmGuest('${guest.id}')">
-              Sim, confirmo presença
+          <div class="actions confirm-actions">
+            <button class="btn success" onclick="publicAnswer('confirmed')">
+              Confirmo presença
             </button>
 
-            <button class="btn danger" onclick="declineGuest('${guest.id}')">
+            <button class="btn danger" onclick="publicAnswer('declined')">
               Não poderei ir
             </button>
           </div>
 
           <p class="small">
-            Sua resposta será registrada automaticamente no painel da assessoria.
+            Sua resposta será registrada nesta demonstração.
           </p>
         </div>
       </div>
@@ -505,60 +567,24 @@ function renderConfirmPage(guestId) {
   `;
 }
 
-function confirmGuest(id) {
-  const companions = Number(document.getElementById("companions").value || 0);
-  const note = document.getElementById("note").value;
+function publicAnswer(status) {
+  const companions = document.getElementById("publicCompanions")?.value || 0;
+  const note = document.getElementById("publicNote")?.value || "";
 
-  guests = guests.map(guest => {
-    if (guest.id !== id) return guest;
+  const title = status === "confirmed"
+    ? "Presença confirmada ✨"
+    : "Resposta registrada";
 
-    return {
-      ...guest,
-      status: "confirmed",
-      companions,
-      note,
-      answeredAt: new Date().toISOString()
-    };
-  });
-
-  saveGuests();
+  const message = status === "confirmed"
+    ? `Obrigado! Sua confirmação foi registrada com ${companions} acompanhante(s).`
+    : "Obrigado por avisar. Sua resposta foi registrada.";
 
   app.innerHTML = `
-    <section class="confirm-page">
+    <section class="confirm-page public-only">
       <div class="card final-message">
-        <h1>Presença confirmada ✨</h1>
-        <p>
-          Obrigado! Sua confirmação foi registrada com sucesso.
-        </p>
-      </div>
-    </section>
-  `;
-}
-
-function declineGuest(id) {
-  const note = document.getElementById("note").value;
-
-  guests = guests.map(guest => {
-    if (guest.id !== id) return guest;
-
-    return {
-      ...guest,
-      status: "declined",
-      companions: 0,
-      note,
-      answeredAt: new Date().toISOString()
-    };
-  });
-
-  saveGuests();
-
-  app.innerHTML = `
-    <section class="confirm-page">
-      <div class="card final-message">
-        <h1>Resposta registrada</h1>
-        <p>
-          Obrigado por avisar. Sua resposta foi registrada com sucesso.
-        </p>
+        <h1>${title}</h1>
+        <p>${message}</p>
+        ${note ? `<p class="small">Observação: ${escapeHTML(note)}</p>` : ""}
       </div>
     </section>
   `;
@@ -574,19 +600,9 @@ function router() {
     return;
   }
 
-  if (hash.startsWith("#confirmar/")) {
-    app.innerHTML = `
-      <section class="confirm-page">
-        <div class="card final-message">
-          <h1>Link antigo</h1>
-          <p>Esse convite foi gerado em uma versão antiga. Peça para a assessoria reenviar o link.</p>
-        </div>
-      </section>
-    `;
-    return;
-  }
-
   renderDashboard();
 }
+
+window.addEventListener("hashchange", router);
 
 router();
