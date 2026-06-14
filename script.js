@@ -567,15 +567,26 @@ function declineGuest(id) {
 function router() {
   const hash = location.hash;
 
+  if (hash.startsWith("#convite/")) {
+    const payload = hash.replace("#convite/", "");
+    const invite = decodeInviteData(payload);
+    renderPublicInvitePage(invite);
+    return;
+  }
+
   if (hash.startsWith("#confirmar/")) {
-    const guestId = hash.replace("#confirmar/", "");
-    renderConfirmPage(guestId);
+    app.innerHTML = `
+      <section class="confirm-page">
+        <div class="card final-message">
+          <h1>Link antigo</h1>
+          <p>Esse convite foi gerado em uma versão antiga. Peça para a assessoria reenviar o link.</p>
+        </div>
+      </section>
+    `;
     return;
   }
 
   renderDashboard();
 }
-
-window.addEventListener("hashchange", router);
 
 router();
